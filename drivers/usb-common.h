@@ -28,6 +28,12 @@
 /* USB standard timeout [ms] */
 #define USB_TIMEOUT 5000
 
+#ifdef APC_MODBUS_HID
+#define REGEX_ARRAY_SIZE 7
+#else
+#define REGEX_ARRAY_SIZE 6
+#endif
+
 /*!
  * USBDevice_t: Describe a USB device. This structure contains exactly
  * the 5 pieces of information by which a USB device identifies
@@ -45,6 +51,9 @@ typedef struct USBDevice_s {
 	char		*Serial;   /*!< Product serial number */
 	char		*Bus;      /*!< Bus name, e.g. "003"  */
 	uint16_t	bcdDevice; /*!< Device release number */
+#ifdef APC_MODBUS_HID
+	uint16_t	MODBUSID;  /*!< MODBUS slave ID for APC MODBUS over HID */
+#endif
 } USBDevice_t;
 
 /*!

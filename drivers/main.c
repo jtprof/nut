@@ -98,11 +98,7 @@ static void help_msg(void)
 
 	printf("  -s <id>        - configure directly from cmd line arguments\n");
 	printf("                 - note: must specify all driver parameters with successive -x\n");
-	printf("                 - note: at least 'port' variable should be set\n");
-	printf("                 - note: to explore the current values on a device from an\n");
-	printf("                   unprivileged user account (with sufficient media access in\n");
-	printf("                   the OS - e.g. to query networked devices), you can specify\n");
-	printf("                   '-d 1' argument and `export NUT_STATEPATH=/tmp` beforehand\n\n");
+	printf("                 - note: at least 'port' variable should be set\n\n");
 
 	printf("  -V             - print version, then exit\n");
 	printf("  -L             - print parseable list of driver variables\n");
@@ -158,6 +154,8 @@ static void storeval(const char *var, char *val)
 {
 	vartab_t	*tmp, *last;
 
+	upsdebugx(4, "main::storeval. var: %s\t val: %s", var, val);
+	
 	if (!strncasecmp(var, "override.", 9)) {
 		dstate_setinfo(var+9, "%s", val);
 		dstate_setflags(var+9, ST_FLAG_IMMUTABLE);
@@ -241,6 +239,8 @@ void addvar(int vartype, const char *name, const char *desc)
 {
 	vartab_t	*tmp, *last;
 
+	upsdebugx(4, "main::addvar. vartype: %d\tname: %s\tdesc: %s", vartype, name, desc);
+	
 	tmp = last = vartab_h;
 
 	while (tmp) {

@@ -57,6 +57,13 @@
 
 /* info elements */
 
+static info_lkp_t apcc_outlet_info[] = {
+	{ 1, "on" },
+	{ 2, "off" },	
+	{ 3, "" },	
+	{ 0, NULL }
+};
+
 #define APCC_OID_BATT_STATUS	".1.3.6.1.4.1.318.1.1.1.2.1.1.0"
 /* Defines for APCC_OID_BATT_STATUS */
 static info_lkp_t apcc_batt_info[] = {
@@ -193,11 +200,13 @@ static snmp_info_t apcc_mib[] = {
 		SU_FLAG_OK | SU_STATUS_CAL, apcc_cal_info },
 	{ "ups.status", ST_FLAG_STRING, SU_INFOSIZE, APCC_OID_NEEDREPLBATT, "",
 		SU_FLAG_OK | SU_STATUS_RB, apcc_battrepl_info },
+	{ "ups.state", ST_FLAG_STRING, 64, ".1.3.6.1.4.1.318.1.1.1.11.1.1.0", "", SU_FLAG_OK, NULL },
 	{ "ups.temperature", 0, 0.1, ".1.3.6.1.4.1.318.1.1.1.2.3.2.0", "", SU_FLAG_OK|SU_FLAG_UNIQUE, NULL },
 	{ "ups.temperature", 0, 1, ".1.3.6.1.4.1.318.1.1.1.2.2.2.0", "", SU_FLAG_OK, NULL },
 	{ "ups.load", 0, 0.1, ".1.3.6.1.4.1.318.1.1.1.4.3.3.0", "", SU_FLAG_OK|SU_FLAG_NEGINVALID|SU_FLAG_UNIQUE, NULL },
 	{ "ups.load", 0, 1, ".1.3.6.1.4.1.318.1.1.1.4.2.3.0", "", SU_FLAG_OK, NULL },
 	{ "ups.firmware", ST_FLAG_STRING, 16, ".1.3.6.1.4.1.318.1.1.1.1.2.1.0", "", SU_FLAG_STATIC | SU_FLAG_OK, NULL },
+	//{ "ups.delay.stayoff", ST_FLAG_STRING | ST_FLAG_RW, 3, ".1.3.6.1.4.1.318.1.1.1.5.2.11.0", "", SU_FLAG_OK, NULL },
 	{ "ups.delay.shutdown", ST_FLAG_STRING | ST_FLAG_RW, 3, ".1.3.6.1.4.1.318.1.1.1.5.2.10.0", "", SU_FLAG_OK, NULL },
 	{ "ups.delay.start", ST_FLAG_STRING | ST_FLAG_RW, 3, ".1.3.6.1.4.1.318.1.1.1.5.2.9.0", "", SU_FLAG_OK, NULL },
 	{ "battery.charge", 0, 0.1, ".1.3.6.1.4.1.318.1.1.1.2.3.1.0", "", SU_FLAG_OK|SU_FLAG_NEGINVALID|SU_FLAG_UNIQUE, NULL },
@@ -277,22 +286,32 @@ static snmp_info_t apcc_mib[] = {
 
 	/* instant commands. */
 	{ "load.off", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	{ "load.off.delay", 0, 3, ".1.3.6.1.4.1.318.1.1.1.6.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "load.on", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.2.6.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	//{ "shutdown.stayoff", 0, 3, ".1.3.6.1.4.1.318.1.1.1.6.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	{ "shutdown.return", 0, 3, ".1.3.6.1.4.1.318.1.1.1.6.2.2.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "shutdown.stayoff", 0, 3, ".1.3.6.1.4.1.318.1.1.1.6.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 
 /*	{ CMD_SDRET, 0, APCC_REBOOT_GRACEFUL, APCC_OID_REBOOT, "", SU_TYPE_CMD | SU_FLAG_OK, NULL }, */
 
-	{ "shutdown.return", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.1.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	//{ "shutdown.return", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.1.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "test.failure.start", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.2.4.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "test.panel.start", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.2.5.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "bypass.start", 0, 2, ".1.3.6.1.4.1.318.1.1.1.6.2.7.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "bypass.stop", 0, 3, ".1.3.6.1.4.1.318.1.1.1.6.2.7.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "test.battery.start", 0, 2, ".1.3.6.1.4.1.318.1.1.1.7.2.2.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	{ "test.battery.never", 0, 5, ".1.3.6.1.4.1.318.1.1.1.7.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
+	{ "test.battery.biweekly", 0, 8, ".1.3.6.1.4.1.318.1.1.1.7.2.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "calibrate.start", 0, 2, ".1.3.6.1.4.1.318.1.1.1.7.2.5.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "calibrate.stop", 0, 3, ".1.3.6.1.4.1.318.1.1.1.7.2.5.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 	{ "reset.input.minmax", 0, 2, ".1.3.6.1.4.1.318.1.1.1.9.1.1.0", "", SU_TYPE_CMD | SU_FLAG_OK, NULL },
 
-	/* end of structure. */
+	{ "outlet.1.status", ST_FLAG_STRING, SU_INFOSIZE, ".1.3.6.1.4.1.318.1.1.1.12.1.2.1.3.1", "OFF", SU_FLAG_OK | SU_STATUS_PWR, apcc_outlet_info },
+	{ "outlet.2.status", ST_FLAG_STRING, SU_INFOSIZE, ".1.3.6.1.4.1.318.1.1.1.12.1.2.1.3.2", "OFF", SU_FLAG_OK | SU_STATUS_PWR, apcc_outlet_info },
+
+	{ "outlet.%i.load.off", 0, 2, ".1.3.6.1.4.1.318.1.1.1.12.3.2.1.3.%i", "", SU_TYPE_CMD | SU_OUTLET , NULL, NULL },
+	{ "outlet.%i.load.on", 0, 1, ".1.3.6.1.4.1.318.1.1.1.12.3.2.1.3.%i", "", SU_TYPE_CMD | SU_OUTLET , NULL, NULL },
+
 	{ NULL, 0, 0, NULL, NULL, 0, NULL }
 };
 

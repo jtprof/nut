@@ -271,7 +271,7 @@ static int match_regex_hex(regex_t *preg, int n)
 
 /* private data type: hold a set of compiled regular expressions. */
 typedef struct regex_matcher_data_s {
-	regex_t	*regex[6];
+	regex_t	*regex[REGEX_ARRAY_SIZE];
 } regex_matcher_data_t;
 
 /* private callback function for regex matches */
@@ -309,11 +309,19 @@ static int match_function_regex(USBDevice_t *hd, void *privdata)
 	if (r != 1) {
 		return r;
 	}
+
+#ifdef APC_MODBUS_HID
+	r = match_regex_hex(data->regex[6], hd->MODBUSID);
+	if (r != 1) {
+		return r;
+	}
+#endif
+
 	return 1;
 }
 
 /* constructor: create a regular expression matcher. This matcher is
- * based on six regular expression strings in regex_array[0..5],
+ * based on REGEX_ARRAY_SIZE regular expression strings in regex_array[0..REGEX_ARRAY_SIZE],
  * corresponding to: vendorid, productid, vendor, product, serial,
  * bus. Any of these strings can be NULL, which matches
  * everything. Cflags are as in regcomp(3). Typical values for cflags
@@ -345,7 +353,7 @@ int USBNewRegexMatcher(USBDeviceMatcher_t **matcher, char **regex, int cflags)
 	m->privdata = (void *)data;
 	m->next = NULL;
 
-	for (i=0; i<6; i++) {
+	for (i=0; i < REGEX_ARRAY_SIZE; i++) {
 		r = compile_regex(&data->regex[i], regex[i], cflags);
 		if (r == -2) {
 			r = i+1;
@@ -372,7 +380,7 @@ void USBFreeRegexMatcher(USBDeviceMatcher_t *matcher)
 
 	data = (regex_matcher_data_t *)matcher->privdata;
 
-	for (i = 0; i < 6; i++) {
+	for (i = 0; i < REGEX_ARRAY_SIZE; i++) {
 		if (!data->regex[i]) {
 			continue;
 		}

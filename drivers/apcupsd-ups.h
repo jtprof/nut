@@ -3,6 +3,8 @@
    Copyright (C)
        2005 - 2010  Arnaud Quette <http://arnaud.quette.free.fr/contact.html>
 
+   2017      Schneider Electric / Dmitry Togushev <dmitry.togushev@schneider-electric.com>
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
@@ -132,6 +134,9 @@ static apcuspd_info_t nut_data[] =
 	{ "TIMELEFT", "battery.runtime", ST_FLAG_RW, 60, "%1.1f", DU_FLAG_NONE, NULL },
 	{ "MINTIMEL", "battery.runtime.low", ST_FLAG_RW, 60, "%.0f", DU_FLAG_NONE, NULL },
 	{ "RETPCT", "battery.charge.restart", ST_FLAG_RW, 1, "%1.1f", DU_FLAG_NONE, NULL },
-	{ "NOMPOWER", "ups.realpower.nominal", 0, 1, "%1.1f", DU_FLAG_INIT, NULL },
+	{ "OL1LOADON", "outlet.1.load.on", ST_FLAG_RW, 1, "%.0f", DU_FLAG_NONE, NULL },
+	{ "OL1LOADOFF", "outlet.1.load.off", ST_FLAG_RW, 1, "%.0f", DU_FLAG_NONE, NULL },
+	{ "OL2LOADON", "outlet.2.load.on", ST_FLAG_RW, 1, "%.0f", DU_FLAG_NONE, NULL },
+	{ "OL2LOADOFF", "outlet.2.load.off", ST_FLAG_RW, 1, "%.0f", DU_FLAG_NONE, NULL },
 	{ NULL, NULL, 0, 0, NULL, DU_FLAG_NONE, NULL }
 };

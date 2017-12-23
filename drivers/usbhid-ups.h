@@ -4,6 +4,7 @@
  *  2003-2009 Arnaud Quette <http://arnaud.quette.free.fr/contact.html>
  *  2005-2006 Peter Selinger <selinger@users.sourceforge.net>
  *  2007-2009 Arjen de Korte <adkorte-guest@alioth.debian.org>
+ *  2017    Dmitry Togushev <jtprofacc@gmain.com>
  *
  * This program was sponsored by MGE UPS SYSTEMS, and now Eaton
  *
@@ -32,6 +33,12 @@
 #include <unistd.h>
 #include "config.h"
 #include "libhid.h"
+
+#ifdef APC_MODBUS_HID
+#include "libmodbus.h" 
+#include <stdint.h>
+#include "modbustypes.h"
+#endif
 
 extern hid_dev_handle_t	udev;
 extern bool_t	 	use_interrupt_pipe;	/* Set to FALSE if interrupt reports should not be used */
@@ -134,6 +141,12 @@ typedef struct {
 /*	char *info_HID_format;	*//* FFE: HID format for complex values */
 /*	interpreter interpret;	*//* FFE: interpreter fct, NULL if not needed  */
 /*	void *next;			*//* next hid_info_t */
+#ifdef APC_MODBUS_HID
+	uint16_t mbregID;
+	uint8_t	mbregLEN;
+	MB_DataType datatype;
+	uint64_t  Command;
+#endif
 } hid_info_t;
 
 /* TODO: rework flags */
@@ -149,6 +162,10 @@ typedef struct {
 #define HU_TYPE_CMD				64		/* instant command */
 
 #define HU_CMD_MASK		0x2000
+
+#ifdef APC_MODBUS_HID
+#define HU_FLAG_MODBUS			0x200		/* MODBUS over HID command */
+#endif
 
 #define HU_INFOSIZE		128
 
@@ -178,5 +195,6 @@ int instcmd(const char *cmdname, const char *extradata);
 int setvar(const char *varname, const char *val);
 
 void possibly_supported(const char *mfr, HIDDevice_t *hd);
+
 
 #endif /* USBHID_UPS_H */

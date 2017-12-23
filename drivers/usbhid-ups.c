@@ -6,6 +6,7 @@
  *   2005-2006 Peter Selinger <selinger@users.sourceforge.net>
  *   2007-2009 Arjen de Korte <adkorte-guest@alioth.debian.org>
  *   2016      Eaton / Arnaud Quette <ArnaudQuette@Eaton.com>
+ *	 2017    Dmitry Togushev <jtprofacc@gmain.com>
  *
  * This program was sponsored by MGE UPS SYSTEMS, and now Eaton
  *
@@ -28,7 +29,7 @@
  */
 
 #define DRIVER_NAME	"Generic HID driver"
-#define DRIVER_VERSION		"0.42"
+#define DRIVER_VERSION		"0.43"
 
 #include "main.h"
 #include "libhid.h"
@@ -36,10 +37,14 @@
 #include "hidparser.h"
 #include "hidtypes.h"
 
-/* include all known subdrivers */
-#include "mge-hid.h"
-
-#ifndef SHUT_MODE
+ /* include all known subdrivers */
+#if defined(SHUT_MODE)
+	#include "mge-hid.h"
+#elif defined(APC_MODBUS_HID)
+	#include "apc-modbus-hid.h"
+	#include <stdint.h>
+#else
+	#include "mge-hid.h"
 	#include "explore-hid.h"
 	#include "apc-hid.h"
 	#include "belkin-hid.h"
@@ -53,11 +58,13 @@
 
 /* master list of avaiable subdrivers */
 static subdriver_t *subdriver_list[] = {
-#ifndef SHUT_MODE
-	&explore_subdriver,
-#endif
+#if defined(SHUT_MODE)
 	&mge_subdriver,
-#ifndef SHUT_MODE
+#elif defined(APC_MODBUS_HID)
+	&apc_modbus_hid_subdriver,
+#else
+	&mge_subdriver,
+	&explore_subdriver,
 	&apc_subdriver,
 	&belkin_subdriver,
 	&cps_subdriver,
@@ -514,6 +521,9 @@ static int match_function_subdriver(HIDDevice_t *d, void *privdata) {
 
 	for (i=0; subdriver_list[i] != NULL; i++) {
 		if (subdriver_list[i]->claim(d)) {
+#ifdef APC_MODBUS_HID
+			subdriver = subdriver_list[i];
+#endif
 			return 1;
 		}
 	}
@@ -558,6 +568,7 @@ int instcmd(const char *cmdname, const char *extradata)
 	upsdebugx(3, "%s: using Path '%s'", __func__, hidups_item->hidpath);
 
 	/* Check for fallback if not found */
+#ifndef APC_MODBUS_HID
 	if (hidups_item == NULL) {
 
 		if (!strcasecmp(cmdname, "load.on")) {
@@ -603,6 +614,7 @@ int instcmd(const char *cmdname, const char *extradata)
 		upsdebugx(2, "instcmd: info element unavailable %s\n", cmdname);
 		return STAT_INSTCMD_INVALID;
 	}
+#endif
 
 	/* Check if the item is an instant command */
 	if (!(hidups_item->hidflags & HU_TYPE_CMD)) {
@@ -620,6 +632,7 @@ int instcmd(const char *cmdname, const char *extradata)
 		value = atol(val);
 	}
 
+#ifndef APC_MODBUS_HID
 	/* Actual variable setting */
 	if (HIDSetDataValue(udev, hidups_item->hiddata, value) == 1) {
 		upsdebugx(3, "instcmd: SUCCEED\n");
@@ -627,6 +640,60 @@ int instcmd(const char *cmdname, const char *extradata)
 		data_has_changed = TRUE;
 		return STAT_INSTCMD_HANDLED;
 	}
+#else
+	//upsdebugx(2, "NUT command: %s, hidpath: %s, hidflags: 0x%04x", item->info_type, item->hidpath, item->hidflags);
+	if (hidups_item->hidflags & HU_FLAG_MODBUS) {
+		if (!strncasecmp(cmdname, "load", 4)) {
+			int ogn = get_UPS_outlets_group_num(), res = 1;
+
+			if (extradata != NULL) {
+				if (!strcasecmp(cmdname, "load.off.delay")) {
+					setvar("ups.delay.shutdown", extradata);
+				}
+				if (!strcasecmp(cmdname, "load.on.delay")) {
+					setvar("ups.delay.start", extradata);
+				}
+			}
+
+			if (ogn > 0) {
+				int i; 
+				char cmd[255] = { 0 };
+				for (i = 0; i < ogn; i++) {
+					snprintf((char*)&cmd, sizeof(cmd) - 1, "outlet.%u.%s", i+1, (char*)cmdname);
+					upsdebugx(2, "usbhid-ups::instcmd. cmd %s", (char*)&cmd);
+					res = res & instcmd((char*)&cmd, extradata);
+				}
+				return res;
+			}
+			else {
+				return MBSetDataValue(udev, hidups_item, value);
+			}
+		}
+
+		if (!strcasecmp(cmdname, "shutdown.stayoff")) {
+			return instcmd("load.off.delay", extradata);
+		}
+		if (!strcasecmp(cmdname, "shutdown.return")) {
+			return instcmd("load.reboot", extradata);
+		}
+		if (!strcasecmp(cmdname, "shutdown.reboot")) {
+			return instcmd("load.reboot", extradata);
+		}
+		if (!strcasecmp(cmdname, "shutdown.stop")) {
+			return instcmd("load.canceloperation", extradata);
+		}
+		upsdebugx(1, "usbhid-ups::instcmd. NUT command: %s, mbregID: 0x%04x, hidflags: 0x%04x", hidups_item->info_type, hidups_item->mbregID, hidups_item->hidflags);
+		return MBSetDataValue(udev, hidups_item, value);
+	}
+	else {
+		if (HIDSetDataValue(udev, hidups_item->hiddata, value) == 1) {
+			upsdebugx(3, "instcmd: SUCCEED\n");
+			/* Set the status so that SEMI_STATIC vars are polled */
+			data_has_changed = TRUE;
+			return STAT_INSTCMD_HANDLED;
+		}
+	}
+#endif
 
 	upsdebugx(3, "instcmd: FAILED\n"); /* TODO: HANDLED but FAILED, not UNKNOWN! */
 	return STAT_INSTCMD_FAILED;
@@ -650,7 +717,7 @@ int setvar(const char *varname, const char *val)
 
 	/* Checking item writability and HID Path */
 	if (!(hidups_item->info_flags & ST_FLAG_RW)) {
-		upsdebugx(2, "setvar: not writable %s\n", varname);
+		upsdebugx(2, "setvar: not writable %s. info_flags: 0x%04x", varname, hidups_item->info_flags);
 		return STAT_SET_UNKNOWN;
 	}
 
@@ -675,12 +742,42 @@ int setvar(const char *varname, const char *val)
 	}
 
 	/* Actual variable setting */
+#ifndef APC_MODBUS_HID
 	if (HIDSetDataValue(udev, hidups_item->hiddata, value) == 1) {
 		upsdebugx(5, "setvar: SUCCEED\n");
 		/* Set the status so that SEMI_STATIC vars are polled */
 		data_has_changed = TRUE;
 		return STAT_SET_HANDLED;
 	}
+#else
+	//upsdebugx(2, "NUT command: %s, hidpath: %s, hidflags: 0x%04x", item->info_type, item->hidpath, item->hidflags);
+	if (hidups_item->hidflags & HU_FLAG_MODBUS) {
+		upsdebugx(2, "usbhid-ups::setvar. NUT command: %s, mbregID: 0x%04x, hidflags: 0x%04x", hidups_item->info_type, hidups_item->mbregID, hidups_item->hidflags);
+		int res = MBSetDataValue(udev, hidups_item, value);
+		if (!strncasecmp(varname, "ups.delay", 9)) {
+			int ogn = get_UPS_outlets_group_num();
+			if (ogn > 0) {
+				int i;
+				char cmd[255] = { 0 };
+				for (i = 0; i < ogn; i++) {
+					snprintf((char*)&cmd, sizeof(cmd) - 1, "outlet.%u.%s", i + 1, (char*)&varname[4]);
+					upsdebugx(2, "usbhid-ups::setvar. cmd %s", &cmd);
+					res = res & setvar(cmd, val);
+				}
+			}
+		}
+		return res;
+
+	}
+	else {
+		if (HIDSetDataValue(udev, hidups_item->hiddata, value) == 1) {
+			upsdebugx(5, "setvar: SUCCEED\n");
+			/* Set the status so that SEMI_STATIC vars are polled */
+			data_has_changed = TRUE;
+			return STAT_SET_HANDLED;
+		}
+	}
+#endif
 
 	upsdebugx(3, "setvar: FAILED\n"); /* FIXME: HANDLED but FAILED, not UNKNOWN! */
 	return STAT_SET_UNKNOWN;
@@ -747,6 +844,10 @@ void upsdrv_makevartable(void)
 	addvar(VAR_VALUE, "interruptsize", "Number of bytes to read from interrupt pipe");
 #else
 	addvar(VAR_VALUE, "notification", "Set notification type, (ignored, only for backward compatibility)");
+#endif
+
+#ifdef APC_MODBUS_HID
+	addvar(VAR_VALUE, "slave", "MODBUS over HID. Slave number. "); 
 #endif
 }
 
@@ -922,7 +1023,8 @@ void upsdrv_initups(void)
 
 	subdriver_matcher = device_path;
 #else
-	char *regex_array[6];
+
+	char *regex_array[REGEX_ARRAY_SIZE];
 
 	upsdebugx(1, "upsdrv_initups...");
 
@@ -945,6 +1047,9 @@ void upsdrv_initups(void)
 	regex_array[3] = getval("product");
 	regex_array[4] = getval("serial");
 	regex_array[5] = getval("bus");
+#ifdef APC_MODBUS_HID
+	regex_array[6] = getval("slave");
+#endif
 
 	ret = USBNewRegexMatcher(&regex_matcher, regex_array, REG_ICASE | REG_EXTENDED);
 	switch(ret)
@@ -957,7 +1062,6 @@ void upsdrv_initups(void)
 		fatalx(EXIT_FAILURE, "invalid regular expression: %s", regex_array[ret]);
 	}
 
-	/* link the matchers */
 	subdriver_matcher->next = regex_matcher;
 #endif /* SHUT_MODE */
 
@@ -1092,11 +1196,14 @@ static void process_boolean_info(const char *nutvalue)
 
 static int callback(hid_dev_handle_t udev, HIDDevice_t *hd, unsigned char *rdbuf, int rdlen)
 {
+#ifndef APC_MODBUS_HID
 	int i;
+#endif
 	const char *mfr = NULL, *model = NULL, *serial = NULL;
 #ifndef SHUT_MODE
 	int ret;
 #endif
+	upsdebugx(1, "usbhid-ups::callback...");
 	upsdebugx(2, "Report Descriptor size = %d", rdlen);
 	upsdebug_hex(3, "Report Descriptor", rdbuf, rdlen);
 
@@ -1117,14 +1224,16 @@ static int callback(hid_dev_handle_t udev, HIDDevice_t *hd, unsigned char *rdbuf
 		return 0;
 	}
 
+#ifndef APC_MODBUS_HID
 	/* select the subdriver for this device */
-	for (i=0; subdriver_list[i] != NULL; i++) {
+	for (i = 0; subdriver_list[i] != NULL; i++) {
 		if (subdriver_list[i]->claim(hd)) {
 			break;
 		}
 	}
 
 	subdriver = subdriver_list[i];
+#endif
 	if (!subdriver) {
 		upsdebugx(1, "Manufacturer not supported!");
 		return 0;
@@ -1133,7 +1242,12 @@ static int callback(hid_dev_handle_t udev, HIDDevice_t *hd, unsigned char *rdbuf
 	upslogx(2, "Using subdriver: %s", subdriver->name);
 
 	HIDDumpTree(udev, subdriver->utab);
-
+#ifdef APC_MODBUS_HID
+	if (!CheckModbusEnable(udev, hd)) {
+		upsdebugx(1, "The device does not support MODBUS over HID communication. Check device setting to turn it on.");
+		return 0;
+	}
+#endif
 #ifndef SHUT_MODE
 	/* create a new matcher for later matching */
 	USBFreeExactMatcher(exact_matcher);
@@ -1219,18 +1333,24 @@ static bool_t hid_ups_walk(walkmode_t mode)
 		/* filter data according to mode */
 		switch (mode)
 		{
-		/* Device capabilities enumeration */
+			/* Device capabilities enumeration */
 		case HU_WALKMODE_INIT:
 			/* Apparently, we are reconnecting, so
 			 * NUT-to-HID translation is already good */
+#ifdef APC_MODBUS_HID
+			upsdebugx(1, "usbhid-upc::hid_ups_walk. NUT command: %s, info_flags: 0x%04x, hidpath: %s, hidflags: 0x%04x, regnum: %d, reglen: %d", item->info_type, item->info_flags, item->hidpath, item->hidflags, item->mbregID, item->mbregLEN);
+			if (item->hidflags & HU_FLAG_MODBUS) {
+				break;
+			}
+#endif
 			if (item->hiddata != NULL)
 				break;
 
 			/* Create the NUT-to-HID mapping */
+
 			item->hiddata = HIDGetItemData(item->hidpath, subdriver->utab);
 			if (item->hiddata == NULL)
 				continue;
-
 			/* Special case for handling server side variables */
 			if (item->hidflags & HU_FLAG_ABSENT) {
 
@@ -1275,7 +1395,7 @@ static bool_t hid_ups_walk(walkmode_t mode)
 				continue;
 
 			/* These need to be polled after user changes (setvar / instcmd) */
-			if ( (item->hidflags & HU_FLAG_SEMI_STATIC) && (data_has_changed == FALSE) )
+			if ((item->hidflags & HU_FLAG_SEMI_STATIC) && (data_has_changed == FALSE))
 				continue;
 
 			break;
@@ -1293,8 +1413,18 @@ static bool_t hid_ups_walk(walkmode_t mode)
 		}
 #endif
 
+#ifndef APC_MODBUS_HID
 		retcode = HIDGetDataValue(udev, item->hiddata, &value, poll_interval);
-
+#else 
+		if (item->hidflags & HU_FLAG_MODBUS) {
+			upsdebugx(2, "usbhid-upc::hid_ups_walk. Path: %s, hiddata == NULL",	item->hidpath); 
+			retcode = MBGetDataValue(udev, item, &value, poll_interval);
+			//value = 0;
+		}
+		else {
+			retcode = HIDGetDataValue(udev, item->hiddata, &value, poll_interval);
+		}
+#endif
 		switch (retcode)
 		{
 		case -EBUSY:		/* Device or resource busy */
@@ -1326,27 +1456,47 @@ static bool_t hid_ups_walk(walkmode_t mode)
 			continue;
 		}
 
+#ifndef APC_MODBUS_HID
 		upsdebugx(2, "Path: %s, Type: %s, ReportID: 0x%02x, Offset: %i, Size: %i, Value: %g",
 			item->hidpath, HIDDataType(item->hiddata), item->hiddata->ReportID,
 			item->hiddata->Offset, item->hiddata->Size, value);
-
+#else
+		if (item->hidflags & HU_FLAG_MODBUS) {
+			if (item->hiddata != NULL) {
+				upsdebugx(2, "Path: %s, Type: %s, ReportID: 0x%02x, Offset: %i, Size: %i, Value: %g",
+					item->hidpath, HIDDataType(item->hiddata), item->hiddata->ReportID,
+					item->hiddata->Offset, item->hiddata->Size, value);
+			}
+			else {
+				upsdebugx(1, "Path: %s, hiddata == NULL, retcode: %d", item->hidpath, retcode);
+			}
+		}
+		else {
+			upsdebugx(2, "Path: %s, Type: %s, ReportID: 0x%02x, Offset: %i, Size: %i, Value: %g",
+				item->hidpath, HIDDataType(item->hiddata), item->hiddata->ReportID,
+				item->hiddata->Offset, item->hiddata->Size, value);
+		}
+#endif
 		if (item->hidflags & HU_TYPE_CMD) {
-			upsdebugx(3, "Adding command '%s' using Path '%s'",
-				item->info_type, item->hidpath);
+			upsdebugx(3, "usbhid-upc::hid_ups_walk. Adding command '%s' using Path '%s'", item->info_type, item->hidpath);
 			dstate_addcmd(item->info_type);
 			continue;
 		}
 
 		/* Process the value we got back (set status bits and
 		 * set the value of other parameters) */
+#ifndef APC_MODBUS_HID
 		if (ups_infoval_set(item, value) != 1)
 			continue;
-
+#else
+		//if (!(item->hidflags & HU_FLAG_MODBUS)) {
+			if (ups_infoval_set(item, value) != 1)
+				continue;
+		//}
+#endif
 		if (mode == HU_WALKMODE_INIT) {
 			info_lkp_t	*info_lkp;
-
 			dstate_setflags(item->info_type, item->info_flags);
-
 			/* Set max length for strings */
 			if (item->info_flags & ST_FLAG_STRING) {
 				dstate_setaux(item->info_type, item->info_len);
@@ -1356,7 +1506,6 @@ static bool_t hid_ups_walk(walkmode_t mode)
 			if (!(item->hidflags & HU_FLAG_ENUM) || !(item->info_flags & ST_FLAG_RW)) {
 				continue;
 			}
-
 			/* Loop on all existing values */
 			for (info_lkp = item->hid2info; info_lkp != NULL
 				&& info_lkp->nut_value != NULL; info_lkp++) {
@@ -1493,8 +1642,19 @@ static hid_info_t *find_nut_info(const char *varname)
 		if (strcasecmp(hidups_item->info_type, varname))
 			continue;
 
+#ifndef APC_MODBUS_HID
 		if (hidups_item->hiddata != NULL)
 			return hidups_item;
+#else
+		//upsdebugx(2, "NUT command: %s, hidpath: %s, hidflags: 0x%04x", item->info_type, item->hidpath, item->hidflags);
+		if (hidups_item->hidflags & HU_FLAG_MODBUS) {
+			return hidups_item;
+		}
+		else {
+			if (hidups_item->hiddata != NULL)
+				return hidups_item;
+		}
+#endif
 	}
 
 	upsdebugx(2, "find_nut_info: unknown info type: %s", varname);

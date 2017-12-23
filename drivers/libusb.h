@@ -5,6 +5,7 @@
  * @author Copyright (C)
  *	2003 - 2006 Arnaud Quette <aquette.dev@gmail.com>
  *      2005 Peter Selinger <selinger@users.sourceforge.net>
+ *  2017    Dmitry Togushev <jtprofacc@gmain.com>
  *
  * This program is sponsored by MGE UPS SYSTEMS - opensource.mgeups.com
  *
@@ -61,6 +62,13 @@ typedef struct usb_communication_subdriver_s {
 } usb_communication_subdriver_t;
 
 extern usb_communication_subdriver_t	usb_subdriver;
+
+#ifdef APC_MODBUS_HID
+int interrupt_read(usb_dev_handle *udev, int ep, unsigned char *buf, int bufsize, int timeout);
+int interrupt_write(usb_dev_handle *udev, int ep, unsigned char *buf, int bufsize, int timeout);
+int interrupt_clear_halt(udev);
+#endif
+
 
 #endif /* LIBUSB_H */
 
